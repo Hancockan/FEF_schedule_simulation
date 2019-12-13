@@ -27,6 +27,7 @@ class periodic_task:
 		self.period = period
 		self.task_type = "periodic"
 		self.deadline_type = deadline_type
+		self.id = uuid.uuid1()
 
 	def __repr__(self):
 		return repr((self.task_type, self.comp_time, self.period))
@@ -43,6 +44,19 @@ class periodic_task:
 	def get_deadline_type(self):
 		return self.deadline_type
 
+	def get_id(self):
+		return self.id
+
+	def __str__(self):
+		return str(self.id)
+
+	def get_deadline(self, time):
+		i = time
+		while True:
+			i += 1
+			if i % self.get_period() == 0:
+				return i
+
 """
 aperiodic task class
 """
@@ -54,6 +68,7 @@ class aperiodic_task:
 		self.comp_time = comp_time
 		self.task_type = "aperiodic"
 		self.deadline_type = deadline_type #hard or soft
+		self.id = uuid.uuid1()
 
 	def __repr__(self):
 		return repr((self.task_type, self.arrival_time, self.comp_time, self.deadline))
@@ -72,6 +87,12 @@ class aperiodic_task:
 
 	def get_arr_time(self):
 		return self.arrival_time
+
+	def get_id(self):
+		return self.id
+
+	def __str__(self):
+		return str(self.id)
 
 """
 this class should serve as a holder for all scheduling results
@@ -169,19 +190,44 @@ def rms_scheduler(task_arr, time):
 
 #check if there exists periodic tasks that haven't executed
 def get_periodic_task(task_arr, has_executed):
+	tsklist = []
 	for i in range(len(task_arr)):
-		tsklist = []
 		if(task_arr[i].is_periodic() and has_executed[i] == False):
 			tsklist.append(task_arr[i])
-		return tsklist
+	return tsklist
 
 #check if soft aperiodic tasks exist
 def get_aperiodic_soft(task_arr, has_executed, time):
 	tsklist = []
 	for i in range(len(task_arr)):
-		if(task_arr[i].is_periodic() == False and has_executed[i] == False and task_arr[i].get_arr_time() >= time):
+		if(task_arr[i].is_periodic() == False and has_executed[i] == False and task_arr[i].get_arr_time() <= time):
 			tsklist.append(task_arr[i])
 	return tsklist
+
+#check if hard periodic task exists
+def get_hard_periodic_tsks(task_arr, has_executed):
+	tsk_list = []
+	for i in range(len(task_arr)):
+		if task_arr[i].is_periodic() and task_arr[i].get_deadline_type() == "hard" and has_executed[i] == False:
+			tsk_list.append(task_arr[i])
+	return tsk_list
+
+#check if soft periodic task exists
+def get_soft_periodic_tsks(task_arr, has_executed):
+	tsk_list = []
+	for i in range(len(task_arr)):
+		if task_arr[i].is_periodic() and task_arr[i].get_deadline_type() == "soft" and has_executed[i] == False:
+			tsk_list.append(task_arr[i])
+	return tsk_list
+
+def deduct_unit_of_execution(task, task_arr, has_executed, time_left):
+	for i in range(len(task_arr)):
+		if task.get_id() == task_arr[i].get_id():
+			time_left[i] = time_left[i] - 1
+			if time_left[i] < 1:
+				has_executed[i] = True
+			return
+
 
 """
 the fair emergency first scheduling algorithm implementation
@@ -197,8 +243,6 @@ def fair_emergency_scheduler(task_arr, time):
 		task_to_execute = None
 		hard_aprd_tsks = []
 
-		##########
-
 		#need to reset all task stats 
 		for j in range(len(task_arr)):
 			
@@ -207,23 +251,21 @@ def fair_emergency_scheduler(task_arr, time):
 				has_executed[j] = False
 				time_left[j] = task_arr[j].get_comp_time()
 
-		##########
-
 		#if there exists an aperiodic task with a hard deadline run the one with the earliest deadline
 		for j in range(len(task_arr)):
 			if(task_arr[j].is_periodic() == False and task_arr[j].get_deadline_type() == "hard" 
-				and task_arr[j].get_arr_time() <= i):
+				and task_arr[j].get_arr_time() <= i and has_executed[j] == False):
 				hard_aprd_tsks.append(task_arr[j])
 
 		#look through list of hard aperiodic tasks for one with closest deadline
 		if(len(hard_aprd_tsks) > 0):
 			task_to_execute = hard_aprd_tsks[0]
 			for j in range(len(hard_aprd_tsks)):
-				if hard_aprd_tsks[j].get_deadline() < hard_aprd_tsks[task_to_execute].get_deadline():
-					task_to_execute = j
+				if hard_aprd_tsks[j].get_deadline() < task_to_execute.get_deadline():
+					task_to_execute = hard_aprd_tsks[j]
+			sr.add_instance(i, task_to_execute)
+			deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
 			continue 
-
-		##########
 
 		#get list of periodic and soft aperiodic tasks
 		period_tasks = get_periodic_task(task_arr, has_executed)
@@ -233,24 +275,91 @@ def fair_emergency_scheduler(task_arr, time):
 			task_to_execute = soft_aprd[0]
 			#run soft apeiodic task with closest deadline
 			for w in range(len(soft_aprd)):
-				if(soft_aprd[w].get_deadline() < soft_aprd[task_to_execute].get_deadline()):
-					task_to_execute = w
+				if(soft_aprd[w].get_deadline() < task_to_execute.get_deadline()):
+					task_to_execute = soft_aprd[w]
+			sr.add_instance(i, task_to_execute)
+			deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+			continue
 
-		#####Need to fix all above that use a task index to rather use a task id generated when it is intstantiated
+		#if periodic and soft aperiodic task both exist
+		if(len(soft_aprd) > 0 and len(period_tasks) > 0):
+
+			#if a hard periodic task exists run it
+			hrd_prd_tsk = get_hard_periodic_tsks(task_arr, has_executed)
+			if(len(hrd_prd_tsk) > 0):
+				task_to_execute = hrd_prd_tsk[0]
+				for j in range(len(hrd_prd_tsk)):
+					if hrd_prd_tsk[j].get_deadline(i) < task_to_execute.get_deadline(i):
+						task_to_execute = hrd_prd_tsk[j]
+				sr.add_instance(i, task_to_execute)
+				deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+				continue
+
+			#else calculate slack between nearest periodic task and nearest aperiodic task to run			
+			nearest_prd_tsk = period_tasks[0]
+			nearest_apr_tsk = soft_aprd[0]
+
+			for j in range(len(period_tasks)):
+				if(period_tasks[j].get_deadline(i) < nearest_prd_tsk.get_deadline(i)):
+					nearest_prd_tsk = period_tasks[j]
+
+			for j in range(len(soft_aprd)):
+				if(soft_aprd[j].get_deadline() < nearest_apr_tsk.get_deadline()):
+					nearest_apr_tsk = soft_aprd[j]
+
+			#use slack to pick which one will execute
+			slack_et = nearest_apr_tsk.get_deadline() - (i + nearest_apr_tsk.get_comp_time())
+			slack_pd = (nearest_prd_tsk.get_deadline(i) - (i + nearest_prd_tsk.get_comp_time())) * 2
+
+			if(slack_et >= slack_pd):
+				#execute periodic task
+				sr.add_instance(i, nearest_prd_tsk)
+				deduct_unit_of_execution(nearest_prd_tsk, task_arr, has_executed, time_left)
+				continue
+			else:
+				sr.add_instance(i, nearest_apr_tsk)
+				deduct_unit_of_execution(nearest_apr_tsk, task_arr, has_executed, time_left)
+				continue
+
+		#if there are only periodic tasks run hard else run soft
+		ph_tasks = get_hard_periodic_tsks(task_arr, has_executed)
+		if(len(ph_tasks) > 0):
+			task_to_execute = ph_tasks[0]
+			for j in range(len(ph_tasks)):
+				if ph_tasks[j].get_deadline(i) < task_to_execute.get_deadline(i):
+					task_to_execute = ph_tasks[j]
+			sr.add_instance(i, task_to_execute)
+			deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+			continue
+		else:
+			ps_tasks = get_soft_periodic_tsks(task_arr, has_executed)
+			if(len(ps_tasks) > 0):
+				task_to_execute = ps_tasks[0]
+				for j in range(len(ps_tasks)):
+					if ps_tasks[j].get_deadline(i) < task_to_execute.get_deadline(i):
+						task_to_execute = ps_tasks[j]
+			sr.add_instance(i, task_to_execute)
+			if task_to_execute != None:
+				deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+	return sr
 
 
 
 def main():
 	
 	task_list = []
-	task_list.append(periodic_task(4, 6, "hard"))
-	task_list.append(aperiodic_task(1, 1, 2, "soft"))
+	task_list.append(periodic_task(1, 4, "soft"))
+	task_list.append(aperiodic_task(4, 1, 6, "soft"))
 	# task_list.append(periodic_task(1, 3))
 	# task_list.append(periodic_task(1, 4))
 
-	sched_rep = rms_scheduler(task_list, 20)
 
+	sched_rep = rms_scheduler(task_list, 20)
 	print(sched_rep)
+
+	sched_rep = fair_emergency_scheduler(task_list, 20)
+	print(sched_rep)
+
 
 	print(uuid.uuid1())
 
