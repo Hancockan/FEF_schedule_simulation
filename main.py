@@ -48,7 +48,7 @@ class periodic_task:
 		return self.id
 
 	def __str__(self):
-		return str(self.id)
+		return "({0}, {1}) {2}".format(self.comp_time, self.period, str(self.id))
 
 	def get_deadline(self, time):
 		i = time
@@ -344,12 +344,21 @@ def fair_emergency_scheduler(task_arr, time):
 	return sr
 
 
+"""
+
+"""
+def test_1():
+	task_list = []
+	task_list.append(periodic_task(1, 10, "soft"))
+
+
 
 def main():
 	
 	task_list = []
 	task_list.append(periodic_task(1, 4, "soft"))
-	task_list.append(aperiodic_task(4, 1, 6, "soft"))
+	task_list.append(aperiodic_task(0, 1, 6, "hard"))
+	task_list.append(aperiodic_task(0, 1, 6, "soft"))
 	# task_list.append(periodic_task(1, 3))
 	# task_list.append(periodic_task(1, 4))
 
@@ -365,3 +374,6 @@ def main():
 
 if __name__ == "__main__":
 	main()
+
+
+
