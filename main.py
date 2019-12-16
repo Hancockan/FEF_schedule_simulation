@@ -9,6 +9,7 @@ other information
 """
 
 import uuid
+import random
 
 
 class aperiodic_server:
@@ -48,7 +49,7 @@ class periodic_task:
 		return self.id
 
 	def __str__(self):
-		return "({0}, {1}) {2}".format(self.comp_time, self.period, str(self.id))
+		return "({0}, {1}) {2} {3}".format(self.comp_time, self.period, self.deadline_type, str(self.id))
 
 	def get_deadline(self, time):
 		i = time
@@ -248,7 +249,10 @@ def fair_emergency_scheduler(task_arr, time):
 			
 			#update task information if it just arrived such as time left to execute and is finished
 			if(task_arr[j].is_periodic() and (i == 0 or i % task_arr[j].get_period() == 0)):
-				has_executed[j] = False
+				has_executed[j] = False # must be reset each time it arrives
+				time_left[j] = task_arr[j].get_comp_time()
+
+			if(task_arr[j].is_periodic() == False and task_arr[j].get_arr_time() == i):
 				time_left[j] = task_arr[j].get_comp_time()
 
 		#if there exists an aperiodic task with a hard deadline run the one with the earliest deadline
@@ -343,22 +347,73 @@ def fair_emergency_scheduler(task_arr, time):
 				deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
 	return sr
 
+# auto generates a list of tasks for algorithms to schedule
+def generate_task_list(overload):
+	# seeking 70% periodic task utilization and <30% aperiodic unless overload then >30%
+	# 50% periodic tasks will be urgent "hard" and 50% will be "soft" or non urgent
 
-"""
-
-"""
-def test_1():
 	task_list = []
-	task_list.append(periodic_task(1, 10, "soft"))
+	utilization = 0.0
 
+	while True:
+		# 1% to 20% utilization on tasks
+		computation_time = random.randint(1, 5)
+		period_time = random.randint(25, 100)
+		deadline_type = None
 
+		# 50% chance of hard or soft
+		if random.randint(1, 2) == 1:
+			deadline_type = "soft"
+		else:
+			deadline_type = "hard"
+
+		#make sure not to go over utilization
+		if computation_time / period_time + utilization > 0.7:
+			continue
+
+		task_list.append(periodic_task(computation_time, period_time, deadline_type))
+		utilization += computation_time / period_time
+
+		#if utilization is atleast 65 % periodic tasks then that is enough
+		if utilization >= 0.65:
+			break
+			# print("task list generated with utilization {0}".format(utilization))
+			# return task_list
+
+	#add aperiodic tasks to the list - will run 1000 time unit simulation
+	while True:
+
+		computation_time = random.randint(1, 10) # 1 - 10 units of computation
+		arrival_time = random.randint(1, 980) # arrive such that all deadlines could be met
+		deadline = arrival_time + 20 # deadline will be 20 time units after arrival
+		deadline_type = "hard" if random.randint(1, 2) == 1 else "soft"
+
+		task_list.append(aperiodic_task(arrival_time, computation_time, deadline, deadline_type))
+		# max utilization an aperiodic task can add is 10/1000 or 1.0 %
+		utilization += computation_time / 1000.0
+
+		if overload:
+			# utilization must be 1.05 to return the task list
+			if utilization >= 1.05:
+				print("overloaded task list generated with utilization {0}".format(utilization))
+				return task_list
+		else:
+			if utilization >= 0.95:
+				print("non overload task list generated with utilization {0}".format(utilization))
+				return task_list
 
 def main():
 	
+	random.seed()
+
+	a = generate_task_list(False)
+	print(a)
+
 	task_list = []
+	task_list.append(periodic_task(1, 6, "soft"))
+	task_list.append(periodic_task(1, 5, "soft"))
 	task_list.append(periodic_task(1, 4, "soft"))
-	task_list.append(aperiodic_task(0, 1, 6, "hard"))
-	task_list.append(aperiodic_task(0, 1, 6, "soft"))
+	task_list.append(aperiodic_task(3, 10, 20, "hard"))
 	# task_list.append(periodic_task(1, 3))
 	# task_list.append(periodic_task(1, 4))
 
@@ -366,7 +421,7 @@ def main():
 	sched_rep = rms_scheduler(task_list, 20)
 	print(sched_rep)
 
-	sched_rep = fair_emergency_scheduler(task_list, 20)
+	sched_rep = fair_emergency_scheduler(a, 1000)
 	print(sched_rep)
 
 
@@ -374,6 +429,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
-
-
