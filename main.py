@@ -107,13 +107,38 @@ class schedule_report:
 		self.time = time
 		self.schedule = [-1 for i in range(time)]
 		self.missed_task_instances = [0 for i in range(len(task_arr))]
+		self.miss_dict = {'hard_prd': 0, 'soft_prd': 0, 'hard_aprd': 0, 'soft_aprd': 0}
 
-	#disregard missed instances on the aperiodic task server
+	#perform analysis at the end
+	def finalize(self):
+		print('this function currently doesnt do anything')
+		#count all misses into the dicitonary
+
+	#periodic tasks
 	def missed_instance(self, task):
 		for i in range(len(self.tasks)):
 			if self.tasks[i].get_id() == task.get_id():
 				self.missed_task_instances[i] += 1
+
+				#count to the misses dictionary unless this is the task server
+				if i == len(self.tasks) - 1: # FEF wont have a periodic task at the end
+					break
+				if self.tasks[i].get_deadline_type() == "hard":
+					self.miss_dict['hard_prd'] += 1
+				else:
+					self.miss_dict['soft_prd'] += 1
+
 				break
+
+	def count_aperiodic_misses(self, time_left):
+		for i in range(len(time_left)):
+			if time_left[i] > 0:
+				self.missed_instance(self.tasks[i])
+
+				if self.tasks[i].get_deadline_type() == "hard":
+					self.miss_dict['hard_aprd'] += 1
+				else:
+					self.miss_dict['soft_aprd'] += 1
 
 	def add_instance(self, time, task):
 		self.schedule[time] = task
@@ -132,7 +157,8 @@ class schedule_report:
 		ret_string = ""
 		for i in range(self.time):
 			ret_string += "t={0}, task_id={1}\n".format(i, self.__get_task(i))
-		ret_string += str(self.missed_task_instances)
+		# ret_string += str(self.missed_task_instances)
+		ret_string += str(self.miss_dict)
 		return ret_string
 
 #check if soft aperiodic tasks exist
@@ -251,6 +277,8 @@ def rms_scheduler(task_arr, time):
 			if time_left[len(time_left) - 1] < 1:
 				has_executed[len(has_executed) - 1] = True
 
+	sr.count_aperiodic_misses(time_left)
+	# sr.finalize()
 	return sr
 
 
@@ -297,6 +325,8 @@ def fair_emergency_scheduler(task_arr, time):
 			
 			#update task information if it just arrived such as time left to execute and is finished
 			if(task_arr[j].is_periodic() and (i == 0 or i % task_arr[j].get_period() == 0)):
+				if time_left[j] != 0:
+					sr.missed_instance(task_arr[j])
 				has_executed[j] = False # must be reset each time it arrives
 				time_left[j] = task_arr[j].get_comp_time()
 
@@ -393,6 +423,9 @@ def fair_emergency_scheduler(task_arr, time):
 			sr.add_instance(i, task_to_execute)
 			if task_to_execute != None:
 				deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+
+	sr.count_aperiodic_misses(time_left)
+
 	return sr
 
 # auto generates a list of tasks for algorithms to schedule
@@ -422,8 +455,8 @@ def generate_task_list(overload):
 		task_list.append(periodic_task(computation_time, period_time, deadline_type))
 		utilization += computation_time / period_time
 
-		#if utilization is atleast 65 % periodic tasks then that is enough
-		if utilization >= 0.65:
+		#if utilization is atleast 68.5 % periodic tasks then that is enough
+		if utilization >= 0.685:
 			break
 			# print("task list generated with utilization {0}".format(utilization))
 			# return task_list
@@ -432,8 +465,8 @@ def generate_task_list(overload):
 	while True:
 
 		computation_time = random.randint(1, 10) # 1 - 10 units of computation
-		arrival_time = random.randint(1, 980) # arrive such that all deadlines could be met
-		deadline = arrival_time + 20 # deadline will be 20 time units after arrival
+		arrival_time = random.randint(1, 950) # arrive such that all deadlines could be met
+		deadline = arrival_time + 50 # deadline will be 20 time units after arrival
 		deadline_type = "hard" if random.randint(1, 2) == 1 else "soft"
 
 		task_list.append(aperiodic_task(arrival_time, computation_time, deadline, deadline_type))
