@@ -429,7 +429,7 @@ def fair_emergency_scheduler(task_arr, time):
 	return sr
 
 # auto generates a list of tasks for algorithms to schedule
-def generate_task_list(overload):
+def generate_task_list(periodic_utilization, aperiodic_utilization, hard_periodic_percent, hard_aperiodic_percent):
 	# seeking 70% periodic task utilization and <30% aperiodic unless overload then >30%
 	# 50% periodic tasks will be urgent "hard" and 50% will be "soft" or non urgent
 
@@ -443,20 +443,20 @@ def generate_task_list(overload):
 		deadline_type = None
 
 		# 50% chance of hard or soft
-		if random.randint(1, 2) == 1:
-			deadline_type = "soft"
-		else:
+		if random.random() < hard_periodic_percent:
 			deadline_type = "hard"
+		else:
+			deadline_type = "soft"
 
 		#make sure not to go over utilization
-		if computation_time / period_time + utilization > 0.7:
+		if computation_time / period_time + utilization > periodic_utilization:
 			continue
 
 		task_list.append(periodic_task(computation_time, period_time, deadline_type))
 		utilization += computation_time / period_time
 
 		#if utilization is atleast 68.5 % periodic tasks then that is enough
-		if utilization >= 0.685:
+		if utilization >= periodic_utilization - 0.015:
 			break
 			# print("task list generated with utilization {0}".format(utilization))
 			# return task_list
@@ -467,27 +467,23 @@ def generate_task_list(overload):
 		computation_time = random.randint(1, 10) # 1 - 10 units of computation
 		arrival_time = random.randint(1, 950) # arrive such that all deadlines could be met
 		deadline = arrival_time + 50 # deadline will be 20 time units after arrival
-		deadline_type = "hard" if random.randint(1, 2) == 1 else "soft"
+		deadline_type = "hard" if random.random() < hard_aperiodic_percent else "soft"
 
 		task_list.append(aperiodic_task(arrival_time, computation_time, deadline, deadline_type))
 		# max utilization an aperiodic task can add is 10/1000 or 1.0 %
 		utilization += computation_time / 1000.0
 
-		if overload:
-			# utilization must be 1.05 to return the task list
-			if utilization >= 1.05:
-				print("overloaded task list generated with utilization {0}".format(utilization))
-				return task_list
-		else:
-			if utilization >= 0.95:
-				print("non overload task list generated with utilization {0}".format(utilization))
-				return task_list
+
+		# utilization must be 1.05 to return the task list
+		if utilization >= (periodic_utilization + aperiodic_utilization):
+			print("task list generated with utilization {0}".format(utilization))
+			return task_list
 
 def main():
 	
 	random.seed()
 
-	a = generate_task_list(False)
+	a = generate_task_list(0.7, 0.3, 0.5, 0.5)
 	print(a)
 
 	task_list = []
@@ -499,11 +495,12 @@ def main():
 	# task_list.append(periodic_task(1, 4))
 
 
-	sched_rep = rms_scheduler(a, 1000)
-	print(sched_rep)
-
-	# sched_rep = fair_emergency_scheduler(a, 1000)
+	# sched_rep = rms_scheduler(a, 1000)
 	# print(sched_rep)
+	
+
+	sched_rep = fair_emergency_scheduler(a, 1000)
+	print(sched_rep)
 
 
 	print(uuid.uuid1())
