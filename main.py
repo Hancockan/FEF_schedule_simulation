@@ -72,7 +72,8 @@ class aperiodic_task:
 		self.id = uuid.uuid1()
 
 	def __repr__(self):
-		return repr((self.task_type, self.arrival_time, self.comp_time, self.deadline))
+		return "aperiodic_task({0}, {1}, {2}, {3})".format(self.arrival_time, 
+			self.comp_time, self.deadline, self.deadline_type)
 
 	def get_comp_time(self):
 		return self.comp_time
@@ -102,7 +103,8 @@ including schedule, missed tasks, response times, etc.
 """
 class schedule_report:
 
-	def __init__(self, time, task_arr):
+	def __init__(self, time, task_arr, aprd_svr):
+		self.tsk_server = aprd_svr
 		self.tasks = task_arr
 		self.time = time
 		self.schedule = [-1 for i in range(time)]
@@ -121,24 +123,23 @@ class schedule_report:
 				self.missed_task_instances[i] += 1
 
 				#count to the misses dictionary unless this is the task server
-				if i == len(self.tasks) - 1: # FEF wont have a periodic task at the end
+				if i == len(self.tasks) - 1 and self.tsk_server: # FEF wont have a periodic task at the end
 					break
 				if self.tasks[i].get_deadline_type() == "hard":
 					self.miss_dict['hard_prd'] += 1
 				else:
 					self.miss_dict['soft_prd'] += 1
-
-				break
+				break # to not aimlessly search through other ids
 
 	def count_aperiodic_misses(self, time_left):
 		for i in range(len(time_left)):
-			if time_left[i] > 0:
-				self.missed_instance(self.tasks[i])
-
+			#if the task is aperiodic and there is time left
+			if self.tasks[i].is_periodic() == False and time_left[i] > 0:
 				if self.tasks[i].get_deadline_type() == "hard":
 					self.miss_dict['hard_aprd'] += 1
 				else:
 					self.miss_dict['soft_aprd'] += 1
+			#don't want to count any time left on periodic tasks
 
 	def add_instance(self, time, task):
 		self.schedule[time] = task
@@ -211,7 +212,7 @@ def rms_scheduler(task_arr, time):
 	task_arr.append(tsk_server)
 
 	#create a schedule report to return
-	sr = schedule_report(time, task_arr);
+	sr = schedule_report(time, task_arr, True);
 
 	#change to true when task has finished for this instance
 	has_executed = [False for i in range(len(task_arr))]
@@ -253,6 +254,7 @@ def rms_scheduler(task_arr, time):
 			# get an aperiodic task to execute - hard deadlines first
 			hard_aprd_tsks = get_aperiodic_hard(task_arr, has_executed, i)
 			soft_aprd_tsks = get_aperiodic_soft(task_arr, has_executed, i)
+
 			if len(hard_aprd_tsks) > 0:
 				task_to_execute = hard_aprd_tsks[0]
 				for j in range(len(hard_aprd_tsks)):
@@ -264,12 +266,17 @@ def rms_scheduler(task_arr, time):
 					if soft_aprd_tsks[j].get_deadline() < task_to_execute.get_deadline():
 						task_to_execute = soft_aprd_tsks[j]
 
+			# if the there was no aperiodic task to assign to the server, go idle
+			if task_to_execute.get_id() == tsk_server_id:
+				task_to_execute = None
+
 		#need to subtract one time of execution in time_left and if 0 then finished also add to schedule report
 		sr.add_instance(i, task_to_execute)
 
 		if(task_to_execute == None):
 			continue
 
+		#For the aperiodic server this will take care of the aperiodic task
 		deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
 
 		if tsk_server_slot:
@@ -278,6 +285,7 @@ def rms_scheduler(task_arr, time):
 				has_executed[len(has_executed) - 1] = True
 
 	sr.count_aperiodic_misses(time_left)
+
 	# sr.finalize()
 	return sr
 
@@ -311,7 +319,7 @@ the fair emergency first scheduling algorithm implementation
 """
 def fair_emergency_scheduler(task_arr, time):
 	
-	sr = schedule_report(time, task_arr)
+	sr = schedule_report(time, task_arr, False)
 	has_executed = [False for i in range(len(task_arr))]
 	time_left = [0 for i in range(len(task_arr))]
 
@@ -428,6 +436,51 @@ def fair_emergency_scheduler(task_arr, time):
 
 	return sr
 
+# earliest deadline first will execute
+def edf_scheduler(task_arr, time):
+
+	sr = schedule_report(time, task_arr, False)
+
+	has_executed = [False for i in range(len(task_arr))]
+	time_left = [0 for i in range(len(task_arr))]
+
+	for i in range(time):
+
+		task_to_execute = None
+
+		# reset task comp times and executed flags
+		for j in range(len(task_arr)):
+			#update task information if it just arrived such as time left to execute and is finished
+			if(task_arr[j].is_periodic() and (i == 0 or i % task_arr[j].get_period() == 0)):
+				if time_left[j] != 0:
+					sr.missed_instance(task_arr[j])
+				has_executed[j] = False # must be reset each time it arrives
+				time_left[j] = task_arr[j].get_comp_time()
+
+			if(task_arr[j].is_periodic() == False and task_arr[j].get_arr_time() == i):
+				time_left[j] = task_arr[j].get_comp_time()
+
+		# form a list with all possible tasks
+		tasks_to_choose_from = []
+		for j in range(len(task_arr)):
+			if task_arr[j].is_periodic() == True:
+				if time_left[j] > 0:
+					tasks_to_choose_from.append(task_arr[j])
+			else:
+				#task is aperiodic
+				if task_arr[j].get_arr_time() <= i and time_left[j] > 0:
+					# if the task is hard and has missed deadline give up on it
+					if task_arr[j].get_deadline_type() == "hard" and task_arr[j].get_deadline() <= i:
+						print("cant add")
+						continue;
+					else:
+						tasks_to_choose_from.append(task_arr[j])
+						print("adding task")
+
+		print("time {0}\n{1}".format(i, tasks_to_choose_from))
+
+
+
 # auto generates a list of tasks for algorithms to schedule
 def generate_task_list(periodic_utilization, aperiodic_utilization, hard_periodic_percent, hard_aperiodic_percent):
 	# seeking 70% periodic task utilization and <30% aperiodic unless overload then >30%
@@ -479,12 +532,37 @@ def generate_task_list(periodic_utilization, aperiodic_utilization, hard_periodi
 			print("task list generated with utilization {0}".format(utilization))
 			return task_list
 
+def test():
+	#need to check example schedules to make sure algorithms work
+
+	task_list = []
+
+	task_list.append(periodic_task(1, 10, "soft"))
+	task_list.append(periodic_task(1, 5, "soft"))
+	task_list.append(aperiodic_task(0, 1, 10, "hard"))
+
+	#RMS schedule check
+
+	sched_rep = rms_scheduler(task_list, 10)
+	# print(sched_rep)
+
+	#FEF schedule check
+
+
+	return True
+
+
 def main():
 	
 	random.seed()
 
-	a = generate_task_list(0.7, 0.3, 0.5, 0.5)
-	print(a)
+	if test() == True:
+		print("Tests Passed")
+
+	a = generate_task_list(0.5, 0.3, 0.5, 0.5)
+	# print(a)
+
+
 
 	task_list = []
 	task_list.append(periodic_task(1, 6, "soft"))
@@ -494,16 +572,15 @@ def main():
 	# task_list.append(periodic_task(1, 3))
 	# task_list.append(periodic_task(1, 4))
 
-
 	# sched_rep = rms_scheduler(a, 1000)
 	# print(sched_rep)
+
+	# sched_rep = fair_emergency_scheduler(a, 1000)
+	# print(sched_rep)
+
+	edf_scheduler(task_list, 25)
+
 	
-
-	sched_rep = fair_emergency_scheduler(a, 1000)
-	print(sched_rep)
-
-
-	print(uuid.uuid1())
 
 if __name__ == "__main__":
 	main()
