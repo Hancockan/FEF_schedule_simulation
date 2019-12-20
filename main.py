@@ -84,7 +84,7 @@ class aperiodic_task:
 	def get_deadline_type(self):
 		return self.deadline_type
 
-	def get_deadline(self):
+	def get_deadline(self, time):
 		return self.deadline
 
 	def get_arr_time(self):
@@ -110,6 +110,9 @@ class schedule_report:
 		self.schedule = [-1 for i in range(time)]
 		self.missed_task_instances = [0 for i in range(len(task_arr))]
 		self.miss_dict = {'hard_prd': 0, 'soft_prd': 0, 'hard_aprd': 0, 'soft_aprd': 0}
+
+	def get_missed_stats(self):
+		return self.miss_dict
 
 	#perform analysis at the end
 	def finalize(self):
@@ -176,7 +179,7 @@ def get_aperiodic_hard(task_arr, has_executed, time):
 	tsklist = []
 	for i in range(len(task_arr)):
 		if(task_arr[i].is_periodic() == False and has_executed[i] == False and task_arr[i].get_arr_time() <= time
-			and task_arr[i].get_deadline_type() == "hard" and task_arr[i].get_deadline() > time):
+			and task_arr[i].get_deadline_type() == "hard" and task_arr[i].get_deadline(time) > time):
 			tsklist.append(task_arr[i])
 	return tsklist
 
@@ -258,12 +261,12 @@ def rms_scheduler(task_arr, time):
 			if len(hard_aprd_tsks) > 0:
 				task_to_execute = hard_aprd_tsks[0]
 				for j in range(len(hard_aprd_tsks)):
-					if hard_aprd_tsks[j].get_deadline() < task_to_execute.get_deadline():
+					if hard_aprd_tsks[j].get_deadline(i) < task_to_execute.get_deadline(i):
 						task_to_execute = hard_aprd_tsks[j]
 			elif len(soft_aprd_tsks) > 0:
 				task_to_execute = soft_aprd_tsks[0]
 				for j in range(len(soft_aprd_tsks)):
-					if soft_aprd_tsks[j].get_deadline() < task_to_execute.get_deadline():
+					if soft_aprd_tsks[j].get_deadline(i) < task_to_execute.get_deadline(i):
 						task_to_execute = soft_aprd_tsks[j]
 
 			# if the there was no aperiodic task to assign to the server, go idle
@@ -351,7 +354,7 @@ def fair_emergency_scheduler(task_arr, time):
 		if(len(hard_aprd_tsks) > 0):
 			task_to_execute = hard_aprd_tsks[0]
 			for j in range(len(hard_aprd_tsks)):
-				if hard_aprd_tsks[j].get_deadline() < task_to_execute.get_deadline():
+				if hard_aprd_tsks[j].get_deadline(i) < task_to_execute.get_deadline(i):
 					task_to_execute = hard_aprd_tsks[j]
 			sr.add_instance(i, task_to_execute)
 			deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
@@ -365,7 +368,7 @@ def fair_emergency_scheduler(task_arr, time):
 			task_to_execute = soft_aprd[0]
 			#run soft apeiodic task with closest deadline
 			for w in range(len(soft_aprd)):
-				if(soft_aprd[w].get_deadline() < task_to_execute.get_deadline()):
+				if(soft_aprd[w].get_deadline(i) < task_to_execute.get_deadline(i)):
 					task_to_execute = soft_aprd[w]
 			sr.add_instance(i, task_to_execute)
 			deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
@@ -394,11 +397,11 @@ def fair_emergency_scheduler(task_arr, time):
 					nearest_prd_tsk = period_tasks[j]
 
 			for j in range(len(soft_aprd)):
-				if(soft_aprd[j].get_deadline() < nearest_apr_tsk.get_deadline()):
+				if(soft_aprd[j].get_deadline(i) < nearest_apr_tsk.get_deadline(i)):
 					nearest_apr_tsk = soft_aprd[j]
 
 			#use slack to pick which one will execute
-			slack_et = nearest_apr_tsk.get_deadline() - (i + nearest_apr_tsk.get_comp_time())
+			slack_et = nearest_apr_tsk.get_deadline(i) - (i + nearest_apr_tsk.get_comp_time())
 			slack_pd = (nearest_prd_tsk.get_deadline(i) - (i + nearest_prd_tsk.get_comp_time())) * 2
 
 			if(slack_et >= slack_pd):
@@ -470,16 +473,32 @@ def edf_scheduler(task_arr, time):
 				#task is aperiodic
 				if task_arr[j].get_arr_time() <= i and time_left[j] > 0:
 					# if the task is hard and has missed deadline give up on it
-					if task_arr[j].get_deadline_type() == "hard" and task_arr[j].get_deadline() <= i:
-						print("cant add")
+					if task_arr[j].get_deadline_type() == "hard" and task_arr[j].get_deadline(i) <= i:
+						# print("cant add")
 						continue;
 					else:
 						tasks_to_choose_from.append(task_arr[j])
-						print("adding task")
+						# print("adding task")
 
-		print("time {0}\n{1}".format(i, tasks_to_choose_from))
+		# print("time {0}\n{1}".format(i, tasks_to_choose_from))
 
+		if len(tasks_to_choose_from) > 0:
+			task_to_execute = tasks_to_choose_from[0]
 
+			for j in range(len(tasks_to_choose_from)):
+				if tasks_to_choose_from[j].get_deadline(i) < task_to_execute.get_deadline(i):
+					task_to_execute = tasks_to_choose_from[j]
+
+		sr.add_instance(i, task_to_execute)
+
+		if task_to_execute == None:
+			continue
+
+		deduct_unit_of_execution(task_to_execute, task_arr, has_executed, time_left)
+
+	sr.count_aperiodic_misses(time_left)
+
+	return sr
 
 # auto generates a list of tasks for algorithms to schedule
 def generate_task_list(periodic_utilization, aperiodic_utilization, hard_periodic_percent, hard_aperiodic_percent):
@@ -529,7 +548,7 @@ def generate_task_list(periodic_utilization, aperiodic_utilization, hard_periodi
 
 		# utilization must be 1.05 to return the task list
 		if utilization >= (periodic_utilization + aperiodic_utilization):
-			print("task list generated with utilization {0}".format(utilization))
+			# print("task list generated with utilization {0}".format(utilization))
 			return task_list
 
 def test():
@@ -551,26 +570,128 @@ def test():
 
 	return True
 
+def get_miss_stats(stat_dict):
+	# there will be 100 dicts - 1 for each time ran
+	total_prd_hard = 0
+	total_prd_soft = 0
+	total_apr_hard = 0
+	total_apr_soft = 0
+
+	for i in range(len(stat_dict)):
+		total_prd_soft += stat_dict[i]['soft_prd']
+		total_prd_hard += stat_dict[i]['hard_prd']
+		total_apr_soft += stat_dict[i]['soft_aprd']
+		total_apr_hard += stat_dict[i]['hard_aprd']
+
+
+	total = total_prd_soft + total_prd_hard + total_apr_soft + total_apr_hard
+
+	percent_ps = 0
+	percent_ph = 0
+	percent_as = 0
+	percent_ah = 0
+
+	if total != 0:
+		percent_ps = total_prd_soft / total * 100
+		percent_ph = total_prd_hard / total * 100
+		percent_as = total_apr_soft / total * 100
+		percent_ah = total_apr_hard / total * 100
+
+	print("Average (ps, ph, as, ah): {0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}".format(
+		total_prd_soft / 100, total_prd_hard / 100, total_apr_soft / 100, total_apr_hard / 100))
+	print("Percent {0:.2f} %, {1:.2f} %, {2:.2f} %, {3:.2f} %".format(percent_ps, percent_ph, percent_as, percent_ah))
+
+def get_averages(periodic, aperiodic, prd_prct, apr_prct):
+
+	rms_miss_dicts = []
+	edf_miss_dicts = []
+	fef_miss_dicts = []
+
+	# run the load on each sheduler 100 times and return averages for each
+	for i in range(100):
+		load = generate_task_list(periodic, aperiodic, prd_prct, apr_prct)
+
+		sr = rms_scheduler(load, 1000)
+		rms_miss_dicts.append(sr.get_missed_stats())
+
+		# if i % 10 == 0:
+		# 	print("{0:.2f} %".format(i / 3))
+
+	print("RMS Stats:")
+	get_miss_stats(rms_miss_dicts)
+
+	for i in range(100):
+		load = generate_task_list(periodic, aperiodic, prd_prct, apr_prct)
+
+		sr = edf_scheduler(load, 1000)
+		edf_miss_dicts.append(sr.get_missed_stats())
+
+		# if i % 10 == 0:
+		# 	print("{0:.2f} %".format((i + 100) / 3))
+
+	print("EDF Stats:")
+	get_miss_stats(edf_miss_dicts)
+
+	for i in range(100):
+		load = generate_task_list(periodic, aperiodic, prd_prct, apr_prct)
+
+		sr = fair_emergency_scheduler(load, 1000)
+		fef_miss_dicts.append(sr.get_missed_stats())
+
+		# if i % 10 == 0:
+		# 	print("{0:.2f} %".format((i + 200) / 3))
+
+	print("FEF Stats:")
+	get_miss_stats(fef_miss_dicts)
+
+	# print("100.00 %")
+	return (rms_miss_dicts, edf_miss_dicts, fef_miss_dicts)
+
+
+
+def evaluation():
+
+	# normal load first -  80 % total utilization
+
+	# 50 % periodic 30 % aperiodic
+	load_1 = generate_task_list(0.5, 0.3, 0.5, 0.5)
+	# 60 % periodic 20 % aperiodic 
+	load_2 = generate_task_list(0.6, 0.2, 0.5, 0.5)
+
+
 
 def main():
 	
 	random.seed()
 
-	if test() == True:
-		print("Tests Passed")
+	# if test() == True:
+	# 	print("Tests Passed")
 
-	a = generate_task_list(0.5, 0.3, 0.5, 0.5)
-	# print(a)
+	print("NORMAL LOAD")
+	print("\n50 %  periodic 30 %  aperiodic")
+	get_averages(0.5, 0.3, 0.5, 0.5)
+	print("\n60 %  periodic 20 %  aperiodic")
+	get_averages(0.6, 0.2, 0.5, 0.5)
+	print("\n70 %  periodic 10 %  aperiodic")
+	get_averages(0.7, 0.1, 0.5, 0.5)
+
+	print("\nOVERLOAD LOAD")
+	print("\n80 %  periodic 30 %  aperiodic")
+	get_averages(0.8, 0.3, 0.5, 0.5)
+	print("\n70 %  periodic 40 %  aperiodic")
+	get_averages(0.7, 0.4, 0.5, 0.5)
+	print("\n60 %  periodic 50 %  aperiodic") 
+	get_averages(0.6, 0.5, 0.5, 0.5)
 
 
 
-	task_list = []
-	task_list.append(periodic_task(1, 6, "soft"))
-	task_list.append(periodic_task(1, 5, "soft"))
-	task_list.append(periodic_task(1, 4, "soft"))
-	task_list.append(aperiodic_task(3, 10, 20, "hard"))
-	# task_list.append(periodic_task(1, 3))
-	# task_list.append(periodic_task(1, 4))
+	# task_list = []
+	# task_list.append(periodic_task(1, 6, "soft"))
+	# task_list.append(periodic_task(1, 5, "soft"))
+	# task_list.append(periodic_task(1, 4, "soft"))
+	# task_list.append(aperiodic_task(3, 10, 20, "hard"))
+	# # task_list.append(periodic_task(1, 3))
+	# # task_list.append(periodic_task(1, 4))
 
 	# sched_rep = rms_scheduler(a, 1000)
 	# print(sched_rep)
@@ -578,7 +699,10 @@ def main():
 	# sched_rep = fair_emergency_scheduler(a, 1000)
 	# print(sched_rep)
 
-	edf_scheduler(task_list, 25)
+	# sched_rep = edf_scheduler(a, 1000)
+	# print(sched_rep)
+
+	# edf_scheduler(task_list, 25)
 
 	
 
